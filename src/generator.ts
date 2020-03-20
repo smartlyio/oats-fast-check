@@ -150,43 +150,42 @@ class GenObject extends fc.Arbitrary<any> {
   }
 }
 
-class FullRecordShrinker extends fc.Shrinkable<any> {
-  constructor(value: Record<string, any>, shrinkable: Record<string, fc.Shrinkable<any>>) {
-    super(value, () => {
-      const shrinked = Object.keys(shrinkable).map(key => {
-        return new fc.Shrinkable(value, () =>
-          shrinkable[key]
-            .shrink()
-            .map(keyValue => {
-              return new FullRecordShrinker(
-                { ...value, [key]: keyValue.value },
-                { ...shrinkable, [key]: keyValue }
-              );
-            })
-            .join([new FullRecordShrinker(value, _.omit(shrinkable, key))].values())
-        );
-      });
-      return fc.Stream.nil<fc.Shrinkable<any>>().join(shrinked.values());
-    });
-  }
-}
-
-class OptRecordShinker extends fc.Shrinkable<any> {
-  constructor(required: string[], record: Record<string, fc.Shrinkable<any>>) {
-    const value: Record<string, any> = {};
-    Object.keys(record).forEach(key => {
-      value[key] = record[key].value;
-    });
-    const optionalValues = Object.keys(record).filter(key => required.indexOf(key) < 0);
-    super(value, () => {
-      const filtered = optionalValues.map(key => {
-        return new OptRecordShinker(required, _.omit(record, key));
-      });
-      return fc.Stream.nil<fc.Shrinkable<any>>().join(
-        [...filtered, new FullRecordShrinker(value, record)].values()
+function fullRecordShrinker(
+  value: Record<string, any>,
+  shrinkable: Record<string, fc.Shrinkable<any>>
+) {
+  return new fc.Shrinkable(value, () => {
+    const shrinked: fc.Shrinkable<any>[] = Object.keys(shrinkable).map(key => {
+      return new fc.Shrinkable(value, () =>
+        shrinkable[key]
+          .shrink()
+          .map(keyValue => {
+            return fullRecordShrinker(
+              { ...value, [key]: keyValue.value },
+              { ...shrinkable, [key]: keyValue }
+            );
+          })
+          .join([fullRecordShrinker(value, _.omit(shrinkable, key))].values())
       );
     });
-  }
+    return fc.Stream.nil<fc.Shrinkable<any>>().join(shrinked.values());
+  });
+}
+
+function optRecordShrinker(required: string[], record: Record<string, fc.Shrinkable<any>>) {
+  const value: Record<string, any> = {};
+  Object.keys(record).forEach(key => {
+    value[key] = record[key].value;
+  });
+  const optionalValues = Object.keys(record).filter(key => required.indexOf(key) < 0);
+  return new fc.Shrinkable(value, () => {
+    const filtered: fc.Shrinkable<any>[] = optionalValues.map(key => {
+      return optRecordShrinker(required, _.omit(record, key));
+    });
+    return fc.Stream.nil<fc.Shrinkable<any>>().join(
+      [...filtered, fullRecordShrinker(value, record)].values()
+    );
+  });
 }
 
 class OptRecord extends fc.Arbitrary<any> {
@@ -214,7 +213,7 @@ class OptRecord extends fc.Arbitrary<any> {
     Object.keys(this.record).forEach(key => {
       shrinks[key] = this.record[key].generate(mrng);
     });
-    return new OptRecordShinker(this.required, shrinks);
+    return optRecordShrinker(this.required, shrinks);
   }
 }
 
