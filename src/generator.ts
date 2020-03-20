@@ -130,6 +130,7 @@ class GenObject extends fc.Arbitrary<any> {
         ? new GenType(this.additionalProperties)
         : fc.anything();
     return additionalFieldNames
+      .noShrink()
       .chain(additionalFields => {
         let fields = this.orderOptionals([...optional, ...additionalFields]);
         if (smaller < 2) {
@@ -137,14 +138,83 @@ class GenObject extends fc.Arbitrary<any> {
         }
         return fc.subarray(fields).withBias(smaller);
       })
+      .noShrink()
       .chain(optFields => {
         const allFields = _.uniq([...required, ...optFields]);
         const object: { [key: string]: fc.Arbitrary<any> } = {};
         allFields.forEach(field => {
           object[field] = generators[field] || additionalGenerator;
         });
-        return fc.record(object).withBias(smaller);
+        return new OptRecord(required, object).withBias(smaller);
       });
+  }
+}
+
+class FullRecordShrinker extends fc.Shrinkable<any> {
+  constructor(value: Record<string, any>, shrinkable: Record<string, fc.Shrinkable<any>>) {
+    super(value, () => {
+      const shrinked = Object.keys(shrinkable).map(key => {
+        return new fc.Shrinkable(value, () =>
+          shrinkable[key]
+            .shrink()
+            .map(keyValue => {
+              return new FullRecordShrinker(
+                { ...value, [key]: keyValue.value },
+                { ...shrinkable, [key]: keyValue }
+              );
+            })
+            .join([new FullRecordShrinker(value, _.omit(shrinkable, key))].values())
+        );
+      });
+      return fc.Stream.nil<fc.Shrinkable<any>>().join(shrinked.values());
+    });
+  }
+}
+
+class OptRecordShinker extends fc.Shrinkable<any> {
+  constructor(required: string[], record: Record<string, fc.Shrinkable<any>>) {
+    const value: Record<string, any> = {};
+    Object.keys(record).forEach(key => {
+      value[key] = record[key].value;
+    });
+    const optionalValues = Object.keys(record).filter(key => required.indexOf(key) < 0);
+    super(value, () => {
+      const filtered = optionalValues.map(key => {
+        return new OptRecordShinker(required, _.omit(record, key));
+      });
+      return fc.Stream.nil<fc.Shrinkable<any>>().join(
+        [...filtered, new FullRecordShrinker(value, record)].values()
+      );
+    });
+  }
+}
+
+class OptRecord extends fc.Arbitrary<any> {
+  constructor(
+    private readonly required: string[],
+    private readonly record: Record<string, fc.Arbitrary<any>>,
+    private readonly bias?: number
+  ) {
+    super();
+    if (bias) {
+      Object.keys(this.record).forEach(key => {
+        this.record[key] = this.record[key].withBias(bias);
+      });
+    }
+  }
+  withBias(freq: number): fc.Arbitrary<any> {
+    if (freq !== this.bias) {
+      return new OptRecord(this.required, this.record, freq);
+    }
+    return this;
+  }
+
+  generate(mrng: fc.Random): fc.Shrinkable<any> {
+    const shrinks: Record<string, fc.Shrinkable<any>> = {};
+    Object.keys(this.record).forEach(key => {
+      shrinks[key] = this.record[key].generate(mrng);
+    });
+    return new OptRecordShinker(this.required, shrinks);
   }
 }
 
@@ -176,13 +246,11 @@ class GenNamed<A> extends fc.Arbitrary<A> {
 
   generate(mrng: fc.Random): fc.Shrinkable<A> {
     if (!this.generator) {
-      this.generator = new GenType(this.named.definition).map(object =>
-        this.named.maker(object).success()
-      );
+      this.generator = new GenType(this.named.definition);
       if (this.bias !== undefined) {
         this.generator = this.generator.withBias(this.bias);
       }
     }
-    return this.generator.generate(mrng);
+    return this.generator.generate(mrng).map(object => this.named.maker(object).success());
   }
 }
