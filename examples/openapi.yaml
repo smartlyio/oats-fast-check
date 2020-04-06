@@ -20,7 +20,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TestTarget'
-        booleanFlagg:
+        booleanFlag:
           type: boolean
         noHit:
           type: string
