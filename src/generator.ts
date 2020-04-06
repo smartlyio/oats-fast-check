@@ -65,6 +65,12 @@ export class GenType extends fc.Arbitrary<any> {
     if (type.type === 'object') {
       return new GenObject(type.properties, type.additionalProperties);
     }
+    if (type.type === 'boolean') {
+      if (type.enum) {
+        return fc.oneof(...type.enum.map(fc.constant));
+      }
+      return fc.boolean();
+    }
     return assert.fail('todo arb for missing type ' + type);
   }
 }
