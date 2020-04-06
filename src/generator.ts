@@ -121,7 +121,7 @@ class GenObject extends fc.Arbitrary<any> {
   private makeGenerator() {
     const required = Object.keys(this.props).filter(prop => this.props[prop].required);
     const optional = Object.keys(this.props).filter(prop => !this.props[prop].required);
-    const smaller = this.bias ? this.bias - 1 : 1;
+    const smaller = this.bias ? Math.max(this.bias - 1, 1) : 1;
     const additionalFieldNames = this.additionalProperties
       ? fc.array(fc.hexaString()).withBias(smaller)
       : fc.constant([]);
