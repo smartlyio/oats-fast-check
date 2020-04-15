@@ -32,9 +32,12 @@ export class GenType extends fc.Arbitrary<any> {
       }
       if (type.pattern) {
         const gen = new randexp(type.pattern);
-        return fc.integer().map(() => {
-          return gen.gen();
-        }).noShrink;
+        return fc
+          .integer()
+          .map(() => {
+            return gen.gen();
+          })
+          .noShrink();
       }
       return fc.hexaString();
     }
