@@ -45,13 +45,13 @@ export class GenType extends fc.Arbitrary<any> {
       if (type.enum) {
         return fc.oneof(...type.enum.map(fc.constant));
       }
-      return fc.integer();
+      return fc.integer({ min: type.minimum, max: type.maximum });
     }
     if (type.type === 'number') {
       if (type.enum) {
         return fc.oneof(...type.enum.map(fc.constant));
       }
-      return fc.float().map(v => 1000 * v);
+      return fc.float().map(v => (type.maximum ?? 1000) * v + (type.minimum ?? 0));
     }
     if (type.type === 'array') {
       return fc.array(new GenType(type.items));
