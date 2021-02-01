@@ -54,7 +54,10 @@ export class GenType extends fc.Arbitrary<any> {
       return fc.float().map(v => (type.maximum ?? 1000) * v + (type.minimum ?? 0));
     }
     if (type.type === 'array') {
-      return fc.array(new GenType(type.items));
+      return fc.array(new GenType(type.items), {
+        minLength: type.minItems,
+        maxLength: type.maxItems
+      });
     }
     if (type.type === 'union') {
       return fc.oneof(...type.options.map(option => new GenType(option)));
